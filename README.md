@@ -2,7 +2,7 @@
 
 A remote [MCP](https://modelcontextprotocol.io) server for managing FreshBooks time tracking from Claude (claude.ai, Claude desktop and mobile, Claude Code) or any MCP client that supports OAuth.
 
-Deployed on [gangway](https://gangway.sh).
+Tested and Deployed on [gangway](https://gangway.sh).
 
 ## Tools
 
