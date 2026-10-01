@@ -58,10 +58,10 @@ async function connect(fetchImpl: typeof fetch) {
     accessToken: 'fb-access',
     refreshToken: 'fb-refresh',
     accessTokenExpiresAt: new Date(NOW.getTime() + 3600_000),
-    redirectUri: 'https://x/oauth/freshbooks/callback',
+    redirectUri: 'https://x/oauth/callback',
   });
   const credentials = new CredentialManager({ store, app: () => ({ clientId: 'a', clientSecret: 'b' }), fetchImpl, now: () => NOW });
-  const server = buildMcpServer({ http: new FreshBooksHttp(credentials, fetchImpl), defaultTimeZone: 'America/New_York', now: () => NOW });
+  const server = buildMcpServer({ http: new FreshBooksHttp(credentials, 4242, fetchImpl), defaultTimeZone: 'America/New_York', now: () => NOW });
   const client = new Client({ name: 'test', version: '1' });
   const [a, b] = InMemoryTransport.createLinkedPair();
   await Promise.all([server.connect(a), client.connect(b)]);

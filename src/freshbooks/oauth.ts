@@ -106,6 +106,9 @@ export async function fetchIdentity(fetchImpl: typeof fetch, accessToken: string
     throw new FreshBooksApiError(res.status, `FreshBooks identity request failed (${res.status}): ${extractErrorMessage(json) ?? res.statusText}`, json);
   }
   const me = json.response;
+  if (!Number.isSafeInteger(Number(me.id)) || Number(me.id) <= 0) {
+    throw new FreshBooksApiError(res.status, 'FreshBooks identity response had no usable id', json);
+  }
   return {
     id: Number(me.id),
     email: String(me.email ?? ''),
@@ -113,18 +116,10 @@ export async function fetchIdentity(fetchImpl: typeof fetch, accessToken: string
   };
 }
 
-export function emailAllowed(email: string | undefined, allowed: string | undefined): boolean {
-  if (!allowed || !email) return false;
-  return email.trim().toLowerCase() === allowed.trim().toLowerCase();
-}
-
 export function pickBusiness(identity: FreshBooksIdentity, overrideId?: number): BusinessMembership['business'] {
   const businesses = identity.business_memberships.map((m) => m.business).filter((b) => b && b.account_id);
-  if (overrideId !== undefined) {
-    const match = businesses.find((b) => Number(b.id) === overrideId);
-    if (!match) throw new Error(`FRESHBOOKS_BUSINESS_ID ${overrideId} is not one of this FreshBooks user's businesses`);
-    return match;
-  }
+  const preferred = overrideId === undefined ? undefined : businesses.find((b) => Number(b.id) === overrideId);
+  if (preferred) return preferred;
   const first = businesses[0];
   if (!first) throw new Error('This FreshBooks user has no business memberships with an accounting account');
   return first;

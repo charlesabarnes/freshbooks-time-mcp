@@ -13,6 +13,7 @@ export interface PendingAuthorization {
 
 export interface AuthCodeRecord {
   codeHash: string;
+  identityId: number;
   clientId: string;
   redirectUri: string;
   codeChallenge: string;
@@ -25,6 +26,7 @@ export type TokenKind = 'access' | 'refresh';
 
 export interface TokenRecord {
   tokenHash: string;
+  identityId: number;
   kind: TokenKind;
   clientId: string;
   scopes: string[];
@@ -53,16 +55,20 @@ export interface Store {
 
   saveAuthCode(code: AuthCodeRecord): Promise<void>;
   getAuthCode(codeHash: string): Promise<AuthCodeRecord | undefined>;
-  takeAuthCode(codeHash: string): Promise<AuthCodeRecord | undefined>;
+  takeAuthCode(codeHash: string, clientId: string): Promise<AuthCodeRecord | undefined>;
 
   saveToken(token: TokenRecord): Promise<void>;
   getToken(tokenHash: string): Promise<TokenRecord | undefined>;
-  takeToken(tokenHash: string, kind: TokenKind): Promise<TokenRecord | undefined>;
+  takeToken(tokenHash: string, kind: TokenKind, clientId: string): Promise<TokenRecord | undefined>;
   deleteToken(tokenHash: string): Promise<void>;
 
-  getCredentials(): Promise<FreshBooksCredentials | undefined>;
+  getCredentials(identityId: number): Promise<FreshBooksCredentials | undefined>;
   saveCredentials(credentials: FreshBooksCredentials): Promise<void>;
-  withCredentialsLock<T>(fn: (current: FreshBooksCredentials | undefined) => Promise<{ save?: FreshBooksCredentials; result: T }>): Promise<T>;
+  withCredentialsLock<T>(
+    identityId: number,
+    fn: (current: FreshBooksCredentials | undefined) => Promise<{ save?: FreshBooksCredentials; result: T }>,
+  ): Promise<T>;
+  countCredentials(): Promise<number>;
 
   ping(): Promise<void>;
 }

@@ -1,6 +1,6 @@
 import type { RequestHandler } from 'express';
-import type { Config } from '../config.js';
-import { emailAllowed, exchangeCode, fetchIdentity, pickBusiness } from '../freshbooks/oauth.js';
+import { emailAllowed, type Config } from '../config.js';
+import { exchangeCode, fetchIdentity, pickBusiness } from '../freshbooks/oauth.js';
 import { baseUrlFor, freshbooksRedirectUri } from '../http/baseUrl.js';
 import type { Store } from '../store/types.js';
 import type { FreshBooksAuthProvider } from './provider.js';
@@ -44,12 +44,12 @@ export function freshbooksCallback(deps: CallbackDeps): RequestHandler {
       const app = { ...config.freshbooks, redirectUri: freshbooksRedirectUri(baseUrlFor(req, config.publicUrl)) };
       const tokens = await exchangeCode(fetchImpl, app, code, now);
       const identity = await fetchIdentity(fetchImpl, tokens.accessToken);
-      if (!emailAllowed(identity.email, config.allowedEmail)) {
+      if (!emailAllowed(identity.email, config.allowlist)) {
         console.warn(`Refused FreshBooks sign-in for identity ${identity.id}`);
         return fail('access_denied', 'This FreshBooks account is not allowed to use this server');
       }
       const business = pickBusiness(identity, config.businessIdOverride);
-      await store.saveCredentials({
+      const account = {
         identityId: identity.id,
         email: identity.email,
         businessId: Number(business.id),
@@ -59,8 +59,9 @@ export function freshbooksCallback(deps: CallbackDeps): RequestHandler {
         refreshToken: tokens.refreshToken,
         accessTokenExpiresAt: tokens.expiresAt,
         redirectUri: app.redirectUri,
-      });
-      const ourCode = await provider.issueAuthorizationCode(pending);
+      };
+      await store.withCredentialsLock(identity.id, async () => ({ save: account, result: undefined }));
+      const ourCode = await provider.issueAuthorizationCode(identity.id, pending);
       res.redirect(302, redirectWith(pending.redirectUri, { code: ourCode, state: pending.clientState }));
     } catch (error) {
       console.error('FreshBooks callback failed', error);

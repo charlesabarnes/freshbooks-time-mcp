@@ -2,7 +2,6 @@ import express, { type Express } from 'express';
 import { createAuth, MCP_PATH } from './auth/routes.js';
 import { authConfigProblems, type Config } from './config.js';
 import { CredentialManager } from './freshbooks/credentials.js';
-import { FreshBooksHttp } from './freshbooks/http.js';
 import { baseUrlFor, freshbooksRedirectUri } from './http/baseUrl.js';
 import { mcpHandler, methodNotAllowed } from './mcp/server.js';
 import type { Store } from './store/types.js';
@@ -27,7 +26,6 @@ export function createApp(deps: AppDeps): Express {
     now: deps.now,
     app: () => config.freshbooks,
   });
-  const http = new FreshBooksHttp(credentials, fetchImpl);
 
   app.get('/healthz', async (_req, res) => {
     try {
@@ -36,9 +34,9 @@ export function createApp(deps: AppDeps): Express {
       res.status(503).json({ ok: false, database: false });
       return;
     }
-    const connected = Boolean(await store.getCredentials().catch(() => undefined));
+    const connectedUsers = await store.countCredentials().catch(() => null);
     const problems = authConfigProblems(config);
-    res.json({ ok: true, database: true, auth_configured: problems.length === 0, config_problems: problems, freshbooks_connected: connected });
+    res.json({ ok: true, database: true, auth_configured: problems.length === 0, config_problems: problems, connected_users: connectedUsers });
   });
 
   app.get('/', (req, res) => {
@@ -53,7 +51,7 @@ export function createApp(deps: AppDeps): Express {
   const auth = createAuth({ store, config, fetchImpl, now: deps.now });
   app.use(auth.router);
 
-  const handler = mcpHandler({ http, defaultTimeZone: config.defaultTimeZone, now: deps.now });
+  const handler = mcpHandler({ credentials, fetchImpl, defaultTimeZone: config.defaultTimeZone, now: deps.now });
   app.post(MCP_PATH, auth.bearer, express.json({ limit: '1mb' }), handler);
   app.all(MCP_PATH, auth.bearer, methodNotAllowed);
 

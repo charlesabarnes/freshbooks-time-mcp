@@ -35,12 +35,13 @@ export function buildQuery(query: Query = {}): string {
 export class FreshBooksHttp {
   constructor(
     private readonly credentials: CredentialManager,
+    private readonly identityId: number,
     private readonly fetchImpl: typeof fetch = fetch,
     private readonly baseUrl: string = FRESHBOOKS_API_BASE,
   ) {}
 
   async context(): Promise<FreshBooksContext> {
-    const c = await this.credentials.current();
+    const c = await this.credentials.current(this.identityId);
     return {
       businessId: c.businessId,
       accountId: c.accountId,
@@ -51,10 +52,10 @@ export class FreshBooksHttp {
   }
 
   async request<T>(method: string, path: string, options: RequestOptions = {}): Promise<T> {
-    let creds = await this.credentials.current();
+    let creds = await this.credentials.current(this.identityId);
     let res = await this.send(method, path, options, creds.accessToken);
     if (res.status === 401) {
-      creds = await this.credentials.refresh(creds.accessToken);
+      creds = await this.credentials.refresh(this.identityId, creds.accessToken);
       res = await this.send(method, path, options, creds.accessToken);
     }
     if (res.status === 204) return undefined as T;

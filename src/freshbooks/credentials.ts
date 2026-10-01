@@ -12,7 +12,7 @@ export interface CredentialManagerOptions {
 }
 
 export class CredentialManager {
-  private inflight: Promise<FreshBooksCredentials> | undefined;
+  private readonly inflight = new Map<number, Promise<FreshBooksCredentials>>();
   private readonly fetchImpl: typeof fetch;
   private readonly now: () => Date;
 
@@ -21,28 +21,28 @@ export class CredentialManager {
     this.now = options.now ?? (() => new Date());
   }
 
-  async current(): Promise<FreshBooksCredentials> {
-    const creds = await this.options.store.getCredentials();
+  async current(identityId: number): Promise<FreshBooksCredentials> {
+    const creds = await this.options.store.getCredentials(identityId);
     if (!creds) throw new FreshBooksNotConnectedError();
     if (this.isFresh(creds)) return creds;
-    return this.refresh(creds.accessToken);
+    return this.refresh(identityId, creds.accessToken);
   }
 
-  refresh(staleAccessToken: string): Promise<FreshBooksCredentials> {
-    if (!this.inflight) {
-      this.inflight = this.doRefresh(staleAccessToken).finally(() => {
-        this.inflight = undefined;
-      });
+  refresh(identityId: number, staleAccessToken: string): Promise<FreshBooksCredentials> {
+    let pending = this.inflight.get(identityId);
+    if (!pending) {
+      pending = this.doRefresh(identityId, staleAccessToken).finally(() => this.inflight.delete(identityId));
+      this.inflight.set(identityId, pending);
     }
-    return this.inflight;
+    return pending;
   }
 
   private isFresh(creds: FreshBooksCredentials): boolean {
     return creds.accessTokenExpiresAt.getTime() - REFRESH_MARGIN_MS > this.now().getTime();
   }
 
-  private doRefresh(staleAccessToken: string): Promise<FreshBooksCredentials> {
-    return this.options.store.withCredentialsLock(async (current) => {
+  private doRefresh(identityId: number, staleAccessToken: string): Promise<FreshBooksCredentials> {
+    return this.options.store.withCredentialsLock(identityId, async (current) => {
       if (!current) throw new FreshBooksNotConnectedError();
       if (current.accessToken !== staleAccessToken && this.isFresh(current)) return { result: current };
       const app = this.options.app();

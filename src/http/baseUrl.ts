@@ -9,6 +9,6 @@ export function baseUrlFor(req: Request, publicUrl: string | undefined): string 
   return `${proto}://${host}`;
 }
 
-export const FRESHBOOKS_CALLBACK_PATH = '/oauth/freshbooks/callback';
+export const FRESHBOOKS_CALLBACK_PATH = '/oauth/callback';
 
 export const freshbooksRedirectUri = (baseUrl: string): string => `${baseUrl}${FRESHBOOKS_CALLBACK_PATH}`;

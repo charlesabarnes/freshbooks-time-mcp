@@ -2,7 +2,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import request from 'supertest';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { createApp } from '../src/app.js';
-import { loadConfig, type Config } from '../src/config.js';
+import { loadConfig, parseAllowlist, type Config } from '../src/config.js';
 import { fakeFetch, json, type Recorded } from './support/fakeFetch.js';
 import { MemoryStore } from './support/memoryStore.js';
 
@@ -14,7 +14,7 @@ const configured = (overrides: Record<string, string> = {}): Config =>
   loadConfig({
     FRESHBOOKS_CLIENT_ID: 'fb-client',
     FRESHBOOKS_CLIENT_SECRET: 'fb-secret',
-    ALLOWED_FRESHBOOKS_EMAIL: 'Charles@Example.com',
+    ALLOWED_FRESHBOOKS_EMAILS: 'Charles@Example.com, partner@example.com',
     DEFAULT_TIMEZONE: 'America/New_York',
     ...overrides,
   });
@@ -71,7 +71,7 @@ async function signIn(app: ReturnType<typeof createApp>) {
   const { verifier, challenge } = pkce();
   const auth = await authorize(app, clientId, challenge);
   const fbState = new URL(auth.headers.location!).searchParams.get('state');
-  const cb = await request(app).get('/oauth/freshbooks/callback').set('Host', HOST).query({ code: 'fb-code', state: fbState });
+  const cb = await request(app).get('/oauth/callback').set('Host', HOST).query({ code: 'fb-code', state: fbState });
   return { clientId, verifier, callback: cb };
 }
 
@@ -95,7 +95,7 @@ describe('metadata', () => {
     expect(prm.body).toMatchObject({ resource: `${BASE}/mcp`, authorization_servers: [`${BASE}/`] });
     const health = await request(app).get('/healthz').set('Host', HOST);
     expect(health.status).toBe(200);
-    expect(health.body).toMatchObject({ ok: true, auth_configured: false, freshbooks_connected: false });
+    expect(health.body).toMatchObject({ ok: true, auth_configured: false, connected_users: 0 });
   });
 
   it('honours forwarded proto/host and PUBLIC_URL', async () => {
@@ -114,7 +114,7 @@ describe('metadata', () => {
     const app = createApp({ config: loadConfig({ FRESHBOOKS_CLIENT_ID: 'x' }), store: new MemoryStore() });
     const res = await request(app).get('/authorize').set('Host', HOST).query({ client_id: 'whatever' });
     expect(res.status).toBe(503);
-    expect(res.body.error_description).toMatch(/FRESHBOOKS_CLIENT_SECRET.*ALLOWED_FRESHBOOKS_EMAIL/);
+    expect(res.body.error_description).toMatch(/FRESHBOOKS_CLIENT_SECRET.*ALLOWED_FRESHBOOKS_EMAILS/);
   });
 
   it('challenges unauthenticated MCP requests with resource metadata', async () => {
@@ -141,7 +141,7 @@ describe('authorization flow', () => {
     expect(location.origin + location.pathname).toBe('https://auth.freshbooks.com/oauth/authorize');
     expect(location.searchParams.get('client_id')).toBe('fb-client');
     expect(location.searchParams.get('response_type')).toBe('code');
-    expect(location.searchParams.get('redirect_uri')).toBe(`${BASE}/oauth/freshbooks/callback`);
+    expect(location.searchParams.get('redirect_uri')).toBe(`${BASE}/oauth/callback`);
     expect(location.searchParams.get('state')).toBeTruthy();
   });
 
@@ -175,7 +175,7 @@ describe('authorization flow', () => {
       code: 'fb-code',
       client_id: 'fb-client',
       client_secret: 'fb-secret',
-      redirect_uri: `${BASE}/oauth/freshbooks/callback`,
+      redirect_uri: `${BASE}/oauth/callback`,
     });
     expect(store.credentials).toMatchObject({ email: 'charles@example.com', identityId: 4242, businessId: 555, accountId: 'xYz12', refreshToken: 'fb-refresh' });
 
@@ -222,7 +222,7 @@ describe('authorization flow', () => {
   it('refuses everyone when ALLOWED_FRESHBOOKS_EMAIL is unset', async () => {
     const { fetch } = fakeFetch([freshbooksApi('charles@example.com')]);
     const config = configured();
-    const app = createApp({ config: { ...config, allowedEmail: undefined }, store, fetchImpl: fetch });
+    const app = createApp({ config: { ...config, allowlist: undefined }, store, fetchImpl: fetch });
     const clientId = await register(app);
     const res = await authorize(app, clientId, pkce().challenge);
     expect(res.status).toBe(503);
@@ -230,7 +230,7 @@ describe('authorization flow', () => {
 
   it('rejects unknown callback state', async () => {
     const app = createApp({ config: configured(), store });
-    const res = await request(app).get('/oauth/freshbooks/callback').set('Host', HOST).query({ code: 'fb-code', state: 'nope' });
+    const res = await request(app).get('/oauth/callback').set('Host', HOST).query({ code: 'fb-code', state: 'nope' });
     expect(res.status).toBe(400);
   });
 
@@ -241,7 +241,7 @@ describe('authorization flow', () => {
     const { clientId, verifier, callback } = await signIn(app);
     const code = new URL(callback.headers.location!).searchParams.get('code')!;
     const tokens = await tokenRequest(app, { grant_type: 'authorization_code', client_id: clientId, code, code_verifier: verifier });
-    config.allowedEmail = 'other@example.com';
+    config.allowlist = parseAllowlist('other@example.com');
     const res = await request(app)
       .post('/mcp')
       .set('Host', HOST)

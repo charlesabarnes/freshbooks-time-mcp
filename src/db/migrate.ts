@@ -18,6 +18,7 @@ const MIGRATIONS: string[] = [
   )`,
   `CREATE TABLE IF NOT EXISTS oauth_auth_codes (
     code_hash TEXT PRIMARY KEY,
+    identity_id BIGINT NOT NULL,
     client_id TEXT NOT NULL,
     redirect_uri TEXT NOT NULL,
     code_challenge TEXT NOT NULL,
@@ -27,6 +28,7 @@ const MIGRATIONS: string[] = [
   )`,
   `CREATE TABLE IF NOT EXISTS oauth_tokens (
     token_hash TEXT PRIMARY KEY,
+    identity_id BIGINT NOT NULL,
     kind TEXT NOT NULL CHECK (kind IN ('access', 'refresh')),
     client_id TEXT NOT NULL,
     scopes TEXT[] NOT NULL DEFAULT '{}',
@@ -35,9 +37,9 @@ const MIGRATIONS: string[] = [
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
   )`,
   `CREATE INDEX IF NOT EXISTS oauth_tokens_expires_at_idx ON oauth_tokens (expires_at)`,
-  `CREATE TABLE IF NOT EXISTS freshbooks_credentials (
-    id SMALLINT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
-    identity_id BIGINT NOT NULL,
+  `CREATE INDEX IF NOT EXISTS oauth_tokens_identity_idx ON oauth_tokens (identity_id)`,
+  `CREATE TABLE IF NOT EXISTS freshbooks_accounts (
+    identity_id BIGINT PRIMARY KEY,
     email TEXT NOT NULL,
     business_id BIGINT NOT NULL,
     account_id TEXT NOT NULL,

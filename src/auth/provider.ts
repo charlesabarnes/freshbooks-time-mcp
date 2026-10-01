@@ -8,8 +8,8 @@ import type {
   OAuthTokenRevocationRequest,
   OAuthTokens,
 } from '@modelcontextprotocol/sdk/shared/auth.js';
-import { authConfigProblems, type Config } from '../config.js';
-import { authorizeUrl, emailAllowed } from '../freshbooks/oauth.js';
+import { authConfigProblems, emailAllowed, type Config } from '../config.js';
+import { authorizeUrl } from '../freshbooks/oauth.js';
 import { baseUrlFor, freshbooksRedirectUri } from '../http/baseUrl.js';
 import type { Store } from '../store/types.js';
 import { hashToken, randomToken } from './tokens.js';
@@ -77,26 +77,26 @@ export class FreshBooksAuthProvider implements OAuthServerProvider {
     _codeVerifier?: string,
     redirectUri?: string,
   ): Promise<OAuthTokens> {
-    const record = await this.deps.store.takeAuthCode(hashToken(authorizationCode));
+    const record = await this.deps.store.takeAuthCode(hashToken(authorizationCode), client.client_id);
     if (!record || record.clientId !== client.client_id) throw new InvalidGrantError('Invalid or expired authorization code');
     if (redirectUri !== undefined && redirectUri !== record.redirectUri) {
       throw new InvalidGrantError('redirect_uri does not match the authorization request');
     }
-    return this.issueTokens(client.client_id, record.scopes, record.resource);
+    return this.issueTokens(client.client_id, record.identityId, record.scopes, record.resource);
   }
 
   async exchangeRefreshToken(client: OAuthClientInformationFull, refreshToken: string, scopes?: string[]): Promise<OAuthTokens> {
-    const record = await this.deps.store.takeToken(hashToken(refreshToken), 'refresh');
+    const record = await this.deps.store.takeToken(hashToken(refreshToken), 'refresh', client.client_id);
     if (!record || record.clientId !== client.client_id) throw new InvalidGrantError('Invalid or expired refresh token');
     const granted = scopes?.length ? scopes.filter((s) => record.scopes.includes(s)) : record.scopes;
-    return this.issueTokens(client.client_id, granted, record.resource);
+    return this.issueTokens(client.client_id, record.identityId, granted, record.resource);
   }
 
   async verifyAccessToken(token: string): Promise<AuthInfo> {
     const record = await this.deps.store.getToken(hashToken(token));
     if (!record || record.kind !== 'access') throw new InvalidTokenError('Invalid or expired access token');
-    const creds = await this.deps.store.getCredentials();
-    if (!creds || !emailAllowed(creds.email, this.deps.config.allowedEmail)) {
+    const creds = await this.deps.store.getCredentials(record.identityId);
+    if (!creds || !emailAllowed(creds.email, this.deps.config.allowlist)) {
       throw new InvalidTokenError('The connected FreshBooks account is no longer allowed; sign in again');
     }
     return {
@@ -105,6 +105,7 @@ export class FreshBooksAuthProvider implements OAuthServerProvider {
       scopes: record.scopes,
       expiresAt: Math.floor(record.expiresAt.getTime() / 1000),
       resource: record.resource ? new URL(record.resource) : undefined,
+      extra: { identityId: record.identityId },
     };
   }
 
@@ -112,7 +113,7 @@ export class FreshBooksAuthProvider implements OAuthServerProvider {
     await this.deps.store.deleteToken(hashToken(request.token));
   }
 
-  async issueAuthorizationCode(pending: {
+  async issueAuthorizationCode(identityId: number, pending: {
     clientId: string;
     redirectUri: string;
     codeChallenge: string;
@@ -122,6 +123,7 @@ export class FreshBooksAuthProvider implements OAuthServerProvider {
     const code = randomToken();
     await this.deps.store.saveAuthCode({
       codeHash: hashToken(code),
+      identityId,
       clientId: pending.clientId,
       redirectUri: pending.redirectUri,
       codeChallenge: pending.codeChallenge,
@@ -132,11 +134,12 @@ export class FreshBooksAuthProvider implements OAuthServerProvider {
     return code;
   }
 
-  private async issueTokens(clientId: string, scopes: string[], resource: string | undefined): Promise<OAuthTokens> {
+  private async issueTokens(clientId: string, identityId: number, scopes: string[], resource: string | undefined): Promise<OAuthTokens> {
     const accessToken = randomToken();
     const refreshToken = randomToken();
     await this.deps.store.saveToken({
       tokenHash: hashToken(accessToken),
+      identityId,
       kind: 'access',
       clientId,
       scopes,
@@ -145,6 +148,7 @@ export class FreshBooksAuthProvider implements OAuthServerProvider {
     });
     await this.deps.store.saveToken({
       tokenHash: hashToken(refreshToken),
+      identityId,
       kind: 'refresh',
       clientId,
       scopes,
