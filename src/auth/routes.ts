@@ -28,7 +28,7 @@ const AUTH_PATHS = [
   `/.well-known/oauth-protected-resource${MCP_PATH}`,
 ];
 
-const rateLimit = { validate: { trustProxy: false, xForwardedForHeader: false } } as const;
+const rateLimit = { validate: { trustProxy: false, xForwardedForHeader: false, creationStack: false } } as const;
 
 export function createAuth(deps: AuthDeps): { router: Router; bearer: RequestHandler; provider: FreshBooksAuthProvider } {
   const provider = new FreshBooksAuthProvider(deps);
